@@ -1,9 +1,13 @@
 const std = @import("std");
 const testing = std.testing;
 
-export fn mutate_ffi(noalias buf: [*]u8, len: usize, num_mutations: usize) callconv(.C) void {
+export fn mutate_ffi(
+    noalias buf: [*]u8,
+    len: usize,
+    num_mutations: usize,
+) callconv(.C) void {
     _ = mutate(buf[0..len], num_mutations) catch {
-        // TODO: Propagate response via FFI boundary.
+        // TODO: Propagate error code via FFI boundary.
         std.debug.print("Failed to mutate\n", .{});
     };
 }
@@ -20,6 +24,8 @@ fn mutate(buf: []u8, num_mutations: usize) !void {
     var start = try std.time.Instant.now();
     try mutator.mutate(num_mutations);
     var end = try std.time.Instant.now();
+
+    // TODO: Remove this debugging info.
     std.debug.print("num_mutations={d}, output=0x{x}, took={}\n", .{
         num_mutations,
         std.fmt.fmtSliceHexLower(mutator.output()),
@@ -69,57 +75,19 @@ fn run_bench(alloc: std.mem.Allocator, num_mutations: usize) !void {
     });
 }
 
-pub const InputDB = struct {
-    num_fn: fn (*InputDB) usize,
-    get_fn: fn (*InputDB, usize) []u8,
-    pub fn num_inputs(db: *InputDB) usize {
-        return db.num_fn();
-    }
-    pub fn get(db: *InputDB, idx: usize) []u8 {
-        return db.get_fn(idx);
-    }
-};
-
-const SimpleDB = struct {
-    iface: InputDB,
-
-    fn init() SimpleDB {
-        return .{
-            // point the interface function pointer to our function
-            .iface = InputDB{
-                .num_inputs = num_inputs,
-                .get = get,
-            },
-        };
-    }
-
-    fn num_inputs(iface: *InputDB) i32 {
-        // Compute pointer to SimpleDB struct from
-        // interface member pointer.
-        const self = @fieldParentPtr(SimpleDB, "iface", iface);
-        _ = self;
-        return 1;
-    }
-
-    fn get(iface: *InputDB, idx: usize) []u8 {
-        _ = idx;
-        // Compute pointer to SimpleDB struct from
-        // interface member pointer.
-        const self = @fieldParentPtr(SimpleDB, "iface", iface);
-        _ = self;
-        return &.{};
-    }
-};
-
+/// Strategies for mutating input bytes that are supported by the mutator.
 pub const Strat = enum {
     Shrink,
     Expand,
     Bit,
-    IncByte,
-    DecByte,
+    AddByte,
+    SubByte,
     NegByte,
 };
 
+/// Mutator is capable of mutating an input byte slice using
+/// a custom memory allocator and a variety of mutation strategies
+/// for fuzzing purposes, inspired by honggfuzz.
 pub const Mutator = struct {
     const This = @This();
     ac: std.mem.Allocator,
@@ -158,8 +126,8 @@ pub const Mutator = struct {
             Strat.Shrink,
             Strat.Expand,
             Strat.Bit,
-            Strat.IncByte,
-            Strat.DecByte,
+            Strat.AddByte,
+            Strat.SubByte,
             Strat.NegByte,
         };
         var i: usize = 0;
@@ -170,8 +138,8 @@ pub const Mutator = struct {
                 .Shrink => try self.shrink(),
                 .Expand => try self.expand(),
                 .Bit => try self.bit(),
-                .IncByte => try self.inc_byte(),
-                .DecByte => try self.dec_byte(),
+                .AddByte => try self.inc_byte(),
+                .SubByte => try self.dec_byte(),
                 .NegByte => try self.neg_byte(),
             }
         }
@@ -229,6 +197,8 @@ pub const Mutator = struct {
         }
         const to_expand = self.rng.random().int(usize) % max_expand;
         var expanded = try self.ac.alloc(u8, to_expand + self.data.len);
+
+        // Insert the expansion at the random offset in the input.
         std.mem.copy(u8, expanded[0..offset], self.data[0..offset]);
         std.mem.copy(
             u8,
@@ -268,5 +238,48 @@ pub const Mutator = struct {
     }
     fn neg_byte(self: *This) !void {
         _ = self;
+    }
+};
+
+// TODO: Document the input DB method for taint / coverage guided mutations.
+pub const InputDB = struct {
+    num_fn: fn (*InputDB) usize,
+    get_fn: fn (*InputDB, usize) []u8,
+    pub fn num_inputs(db: *InputDB) usize {
+        return db.num_fn();
+    }
+    pub fn get(db: *InputDB, idx: usize) []u8 {
+        return db.get_fn(idx);
+    }
+};
+
+const SimpleDB = struct {
+    iface: InputDB,
+
+    fn init() SimpleDB {
+        return .{
+            // point the interface function pointer to our function
+            .iface = InputDB{
+                .num_inputs = num_inputs,
+                .get = get,
+            },
+        };
+    }
+
+    fn num_inputs(iface: *InputDB) i32 {
+        // Compute pointer to SimpleDB struct from
+        // interface member pointer.
+        const self = @fieldParentPtr(SimpleDB, "iface", iface);
+        _ = self;
+        return 1;
+    }
+
+    fn get(iface: *InputDB, idx: usize) []u8 {
+        _ = idx;
+        // Compute pointer to SimpleDB struct from
+        // interface member pointer.
+        const self = @fieldParentPtr(SimpleDB, "iface", iface);
+        _ = self;
+        return &.{};
     }
 };
