@@ -9,6 +9,8 @@ safety checks provided by Zig itself. Using a custom allocation strategy allows 
 mutator to be lightning fast, and the allocator of choice can be customized
 when interacting with the libraries.
 
+Eventually, **coverage-guided mutation via an input DB will be supported for the library**.
+
 Inspired by [honggfuzz](https://github.com/google/honggfuzz)'s mutator.
 
 ## Example
