@@ -1,6 +1,20 @@
 const std = @import("std");
 const testing = std.testing;
 
+export fn mutate_ffi(noalias buf: [*]u8, len: usize) callconv(.C) void {
+    _ = buf;
+    @setRuntimeSafety(false);
+    std.debug.print("Len {d}\n", .{len});
+    // var slice = buf[0..len];
+    // std.debug.print("Type: {}", .{@TypeOf(slice)});
+    //mutate(slice);
+}
+
+fn mutate(buf: []u8) void {
+    _ = buf;
+    std.debug.print("Mutating yay", .{});
+}
+
 export fn add(a: i32, b: i32) i32 {
     return a + b + 1;
 }
