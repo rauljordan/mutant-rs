@@ -24,6 +24,11 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    lib.bundle_compiler_rt = true;
+    lib.force_pic = true;
+    lib.single_threaded = true;
+    lib.strip = true;
+
     // This declares intent for the library to be installed into the standard
     // location when the user invokes the "install" step (the default step when
     // running `zig build`).

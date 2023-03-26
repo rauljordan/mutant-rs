@@ -1,47 +1,49 @@
 const std = @import("std");
 const testing = std.testing;
 
-export fn mutate_ffi(noalias buf: [*]u8, len: usize) callconv(.C) void {
-    _ = buf;
-    @setRuntimeSafety(false);
-    std.debug.print("Len {d}\n", .{len});
-    // var slice = buf[0..len];
-    // std.debug.print("Type: {}", .{@TypeOf(slice)});
-    //mutate(slice);
+export fn mutate_ffi(noalias buf: [*]u8, len: usize, num_mutations: usize) callconv(.C) void {
+    _ = mutate(buf[0..len], num_mutations) catch {
+        // TODO: Propagate response via FFI boundary.
+        std.debug.print("Failed to mutate\n", .{});
+    };
 }
 
-fn mutate(buf: []u8) void {
-    _ = buf;
-    std.debug.print("Mutating yay", .{});
+fn mutate(buf: []u8, num_mutations: usize) !void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    var alloc: std.mem.Allocator = arena.allocator();
+    defer _ = arena.deinit();
+
+    var mutator = try Mutator.init(100, alloc);
+
+    mutator.input(buf);
+
+    var start = try std.time.Instant.now();
+    try mutator.mutate(num_mutations);
+    var end = try std.time.Instant.now();
+    std.debug.print("num_mutations={d}, output=0x{x}, took={}\n", .{
+        num_mutations,
+        std.fmt.fmtSliceHexLower(mutator.output()),
+        std.fmt.fmtDuration(end.since(start)),
+    });
 }
 
-export fn add(a: i32, b: i32) i32 {
-    return a + b + 1;
+test "bench_mutate_arena_allocator" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    var alloc: std.mem.Allocator = arena.allocator();
+    defer _ = arena.deinit();
+
+    const num_mutations = 100;
+    try run_bench(alloc, num_mutations);
 }
 
-test "basic add functionality" {
-    try testing.expect(add(3, 7) == 10);
+test "bench_mutate_general_purpose_allocator" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var alloc: std.mem.Allocator = gpa.allocator();
+    defer _ = gpa.deinit();
+
+    const num_mutations = 100;
+    try run_bench(alloc, num_mutations);
 }
-
-// const std = @import("std");
-
-// pub fn main() !void {
-//     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-//     var alloc: std.mem.Allocator = arena.allocator();
-//     defer _ = arena.deinit();
-
-//     const num_mutations = 1_000_000;
-//     std.debug.print("Running with arena allocator, 1M mutations\n", .{});
-//     try run_bench(alloc, num_mutations);
-//     //std.debug.print("\n", .{});
-
-//     // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-//     // alloc = gpa.allocator();
-//     // defer _ = gpa.deinit();
-
-//     // std.debug.print("Running with general purpose allocator, 1M mutations\n", .{});
-//     // try run_bench(alloc, num_mutations);
-// }
 
 fn run_bench(alloc: std.mem.Allocator, num_mutations: usize) !void {
     var mutator = try Mutator.init(100, alloc);
@@ -51,6 +53,7 @@ fn run_bench(alloc: std.mem.Allocator, num_mutations: usize) !void {
     // 8 bytes.
     const initial = [8]u8{ 1, 2, 3, 4, 5, 6, 7, 8 };
     std.mem.copy(u8, items, initial[0..8]);
+    std.debug.print("", .{});
     std.debug.print("input 0x{x}\n", .{
         std.fmt.fmtSliceHexLower(items),
     });
@@ -129,8 +132,8 @@ pub const Mutator = struct {
     pub fn init(
         max_size: usize,
         ac: std.mem.Allocator,
-        // TODO: Add customizable entropy source
     ) !This {
+        // TODO: Customize.
         var rand = std.rand.DefaultPrng.init(1290192);
         return .{
             .data = &.{},
@@ -140,10 +143,6 @@ pub const Mutator = struct {
             .rng = &rand,
             .accessed = false,
         };
-    }
-
-    pub fn deinit(self: *This) void {
-        self.ac.free(self.data);
     }
 
     pub fn input(self: *This, b: []u8) void {
@@ -261,34 +260,13 @@ pub const Mutator = struct {
     fn copy(self: *This) !void {
         _ = self;
     }
-
     fn inc_byte(self: *This) !void {
-        if (self.data.len == 0) {
-            return;
-        }
-        const offset = self.rand_offset();
-        const x = self.data[offset];
-        self.data[offset] = x;
-        return;
+        _ = self;
     }
-
     fn dec_byte(self: *This) !void {
-        if (self.data.len == 0) {
-            return;
-        }
-        const offset = self.rand_offset();
-        const x = self.data[offset];
-        self.data[offset] = x;
-        return;
+        _ = self;
     }
-
     fn neg_byte(self: *This) !void {
-        if (self.data.len == 0) {
-            return;
-        }
-        const offset = self.rand_offset();
-        const x = self.data[offset];
-        self.data[offset] = x;
-        return;
+        _ = self;
     }
 };

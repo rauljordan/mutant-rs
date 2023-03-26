@@ -1,2 +1,4 @@
 /target
 /Cargo.lock
+zig/zig-cache
+zig/zig-out
