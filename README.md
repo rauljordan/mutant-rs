@@ -1,6 +1,6 @@
 # Mutant-rs
 
-This library exposes a **mutator** for fuzzing purposes using **minimal memory allocations**, implemented in **Zig with Rust bindings**! Rust calls out to the mutator via a single, static
+This library exposes a **mutator** for fuzzing purposes using **minimal memory allocations**, implemented in [Zig](https://ziglang.org/) with **Rust bindings**! Rust calls out to the mutator via a single, static
 library via FFI, as Zig has C equivalence in its FFI boundaries. This also means the Zig code can interact with the Rust code, inspired by `[rustiffy](https://github.com/DutchGhost/rustiffy)`.
 
 The mutator takes in a single, mutable bytes buffer and mutates it N times
@@ -51,3 +51,7 @@ fn mutate(buf: []u8, num_mutations: usize) !void {
 - [ ] Implement all mutations strategies available
 - [ ] Criterion benchmarks from Rust
 - [ ] Make it a usable Rust library. How to ship the zig static lib?
+
+## License
+
+MIT
