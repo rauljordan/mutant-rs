@@ -38,7 +38,7 @@ test "bench_mutate_arena_allocator" {
     var alloc: std.mem.Allocator = arena.allocator();
     defer _ = arena.deinit();
 
-    const num_mutations = 100;
+    const num_mutations = 1_000_000;
     try run_bench(alloc, num_mutations);
 }
 
@@ -47,7 +47,7 @@ test "bench_mutate_general_purpose_allocator" {
     var alloc: std.mem.Allocator = gpa.allocator();
     defer _ = gpa.deinit();
 
-    const num_mutations = 100;
+    const num_mutations = 1_000_000;
     try run_bench(alloc, num_mutations);
 }
 
