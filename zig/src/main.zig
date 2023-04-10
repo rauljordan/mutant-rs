@@ -42,18 +42,8 @@ test "bench_mutate_arena_allocator" {
     try run_bench(alloc, num_mutations);
 }
 
-test "bench_mutate_general_purpose_allocator" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    var alloc: std.mem.Allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    const num_mutations = 1_000_000;
-    try run_bench(alloc, num_mutations);
-}
-
 fn run_bench(alloc: std.mem.Allocator, num_mutations: usize) !void {
     var mutator = try Mutator.init(100, alloc);
-    defer mutator.deinit();
     var items = try mutator.ac.alloc(u8, 8);
 
     // 8 bytes.
@@ -69,7 +59,9 @@ fn run_bench(alloc: std.mem.Allocator, num_mutations: usize) !void {
     var start = try std.time.Instant.now();
     try mutator.mutate(num_mutations);
     var end = try std.time.Instant.now();
-    std.debug.print("output 0x{x}, took={}\n", .{
+
+    std.debug.print("num_mutations={d}, output=0x{x}, took={}\n", .{
+        num_mutations,
         std.fmt.fmtSliceHexLower(mutator.output()),
         std.fmt.fmtDuration(end.since(start)),
     });
@@ -122,7 +114,7 @@ pub const Mutator = struct {
     }
 
     pub fn mutate(self: *This, times: usize) !void {
-        const strats: [6]Strat = [6]Strat{
+        const strats = [_]Strat{
             Strat.Shrink,
             Strat.Expand,
             Strat.Bit,
@@ -241,45 +233,70 @@ pub const Mutator = struct {
     }
 };
 
-// TODO: Document the input DB method for taint / coverage guided mutations.
-pub const InputDB = struct {
-    num_fn: fn (*InputDB) usize,
-    get_fn: fn (*InputDB, usize) []u8,
-    pub fn num_inputs(db: *InputDB) usize {
-        return db.num_fn();
+// Insanely fast arena allocator for a single type using a memory pool.
+fn TurboPool(comptime T: type) type {
+    return struct {
+        const Self = @This();
+        const List = std.TailQueue(T);
+        arena: std.heap.ArenaAllocator,
+        free: List = .{},
+
+        pub fn init(allocator: std.mem.Allocator) Self {
+            return .{
+                .arena = std.heap.ArenaAllocator.init(allocator),
+            };
+        }
+        pub fn deinit(self: *Self) void {
+            self.arena.deinit();
+        }
+        pub fn new(self: *Self) !*T {
+            const obj = if (self.free.popFirst()) |item|
+                item
+            else
+                try self.arena.allocator().create(List.Node);
+            return &obj.data;
+        }
+        pub fn delete(self: *Self, obj: *T) void {
+            const node = @fieldParentPtr(List.Node, "data", obj);
+            self.free.append(node);
+        }
+    };
+}
+
+const DB = struct {
+    getFn: *const fn (ptr: *DB) void,
+    numInputsFn: *const fn (ptr: *DB) void,
+    pub fn get(self: *DB) void {
+        self.getFn(self);
     }
-    pub fn get(db: *InputDB, idx: usize) []u8 {
-        return db.get_fn(idx);
+    pub fn numInputs(self: *DB) void {
+        self.numInputsFn(self);
     }
 };
 
 const SimpleDB = struct {
-    iface: InputDB,
-
-    fn init() SimpleDB {
+    db: DB,
+    pub fn init() SimpleDB {
+        const impl = struct {
+            pub fn get(ptr: *DB) void {
+                const self = @fieldParentPtr(SimpleDB, "db", ptr);
+                self.get();
+            }
+            pub fn numInputs(ptr: *DB) void {
+                const self = @fieldParentPtr(SimpleDB, "db", ptr);
+                self.numInputs();
+            }
+        };
         return .{
-            // point the interface function pointer to our function
-            .iface = InputDB{
-                .num_inputs = num_inputs,
-                .get = get,
-            },
+            .db = .{ .getFn = impl.get, .numInputsFn = impl.numInputs },
         };
     }
-
-    fn num_inputs(iface: *InputDB) i32 {
-        // Compute pointer to SimpleDB struct from
-        // interface member pointer.
-        const self = @fieldParentPtr(SimpleDB, "iface", iface);
+    pub fn get(self: *SimpleDB) void {
         _ = self;
-        return 1;
+        std.debug.print("get", .{});
     }
-
-    fn get(iface: *InputDB, idx: usize) []u8 {
-        _ = idx;
-        // Compute pointer to SimpleDB struct from
-        // interface member pointer.
-        const self = @fieldParentPtr(SimpleDB, "iface", iface);
+    pub fn numInputs(self: *SimpleDB) void {
         _ = self;
-        return &.{};
+        std.debug.print("numInputs", .{});
     }
 };
